@@ -1,41 +1,33 @@
-import socket
-from cryptography.hazmat.primitives import serialization
-from fun import generate_keys, decrypt_message, encrypt_message
+# server.py
 
-def run_server():
-    host = 'localhost'
-    port = 9050
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((host, port))
-    server.listen(1)
-    print("Serwer nasłuchuje na porcie", port)
+import socket
+import threading
+from fun import decrypt_message
+from load_keys import load_private_key
+
+def handle_client(client_socket, private_key):
+    while True:
+        data = client_socket.recv(4096)
+        if not data:
+            break
+        decrypted_message = decrypt_message(private_key, data)
+        print(f"Received: {decrypted_message}")
+        response = input("Reply: ")
+        client_socket.sendall(response.encode())  # No encryption here
+    client_socket.close()
+
+def server(private_key_path):
+    private_key = load_private_key(private_key_path)
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("0.0.0.0", 12345))
+    server_socket.listen(5)
 
     while True:
-        conn, addr = server.accept()
-        print('Połączono z:', addr)
+        client_socket, addr = server_socket.accept()
+        print(f"Accepted connection from {addr}")
+        client_handler = threading.Thread(target=handle_client, args=(client_socket, private_key))
+        client_handler.start()
 
-        client_public_key = serialization.load_pem_public_key(conn.recv(1024))
-
-        private_key, public_key = generate_keys()
-        pem = public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
-        conn.sendall(pem)
-
-        while True:
-            encrypted_msg = conn.recv(1024)
-            if not encrypted_msg:
-                break
-            print("Otrzymano zaszyfrowaną wiadomość")
-
-            message = decrypt_message(private_key, encrypted_msg)
-            print("Wiadomość:", message)
-
-            response = encrypt_message(client_public_key, 'Odebrano: ' + message)
-            conn.sendall(response)
-
-        conn.close()
-
-if __name__ == '__main__':
-    run_server()
+if __name__ == "__main__":
+    private_key_path = "private_key.pem"
+    server(private_key_path)
